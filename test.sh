@@ -1,0 +1,1 @@
+websocat ws://localhost:8787/test

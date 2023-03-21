@@ -1,8 +1,11 @@
 use serde_json::json;
-use worker::*;
-
+use wasm_bindgen_futures::spawn_local;
+use worker::{*, wasm_bindgen::JsValue, worker_sys::ResponseInit};
+use futures_util::{StreamExt, TryStreamExt};
 mod utils;
 mod prompt;
+mod stream_parser;
+use async_stream::stream;
 
 
 fn log_request(req: &Request) {
@@ -52,6 +55,76 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
             let version = ctx.var("WORKERS_RS_VERSION")?.to_string();
             Response::ok(version)
         })
+        .get("/test", |mut req, ctx| {
+            let upgrade_header = req.headers().get("Upgrade")?;
+            match upgrade_header {
+                Some(x) if x =="websocket" => {
+                    // sounds good
+                },
+                _ => {
+                    return Response::error("Expected Upgrade: websocket", 426);
+                }
+            }
+
+            let ws_pair = WebSocketPair::new()?;
+            let server = ws_pair.server;
+            let client = ws_pair.client;
+            server.accept()?;
+
+            let openai_key = ctx.var("OPENAI_API_KEY")?.to_string();
+            spawn_local(async move {
+                route_chat_to_ws(openai_key, server).await.expect("route_chat_to_ws failed");
+            });  
+
+            Response::from_websocket(client)
+        })
         .run(req, env)
         .await
+}
+
+
+pub async fn route_chat_to_ws(openai_key: String, server: WebSocket) -> worker::Result<()> {
+    let prompt = prompt::Prompt{
+        model: "gpt-3.5-turbo".to_string(),
+        messages: vec![
+            prompt::Message{
+                role: prompt::Role::System,
+                content: "You are a helpful Chat Bot.".to_string()
+            },
+        prompt::Message{
+            role: prompt::Role::User,
+            content: "Hello".to_string()},
+        ],
+        stream: true
+    };
+    
+    let auth_text = "Bearer ".to_string() + &openai_key;
+
+    let mut headers = Headers::new();
+    headers.append("Content-Type", "application/json")?;
+    headers.append("Authorization", &auth_text)?;
+
+    let mut init = RequestInit::new();
+    init.with_method(Method::Post);
+    init.with_headers(headers);
+    let body = serde_json::to_string(&prompt)?;
+    console_log!("body: {}", body);
+    init.with_body(Some(JsValue::from_str(&body)));
+
+    let request = Request::new_with_init("https://api.openai.com/v1/chat/completions", &init)?;
+
+    let mut response = Fetch::Request(request).send().await?;
+
+    let body = response.stream()?;
+
+    let mut json_stream = stream_parser::StreamParser::parse_byte_stream(body);
+
+    while let Some(msg) = json_stream.next().await{
+        console_log!("sent message: {:?}", msg);
+        server.send_with_str(msg?)?
+    };
+
+    server.close::<String>(None, None)?;
+
+    Ok(())
 }

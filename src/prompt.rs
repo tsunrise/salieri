@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum Role {
+    #[serde(rename = "system")]
+    System,
     #[serde(rename = "user")]
     User,
     #[serde(rename = "assistant")]
@@ -18,6 +20,8 @@ pub struct Message {
 pub struct Prompt{
     pub model: String,
     pub messages: Vec<Message>,
+    #[serde(default)]
+    pub stream: bool,
 }
 
 #[cfg(test)]
@@ -30,7 +34,8 @@ mod tests{
             messages: vec![Message{
                 role: Role::User,
                 content: "Hello!".to_string()
-            }]
+            }],
+            stream: false
         };
 
         let json = r#"{

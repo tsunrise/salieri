@@ -2,6 +2,8 @@ use serde_json::json;
 use worker::*;
 
 mod utils;
+mod prompt;
+
 
 fn log_request(req: &Request) {
     console_log!(

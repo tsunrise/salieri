@@ -93,17 +93,27 @@ pub async fn route_chat_to_ws(openai_key: &str, server: WebSocket) -> worker::Re
     let request = Request::new_with_init("https://api.openai.com/v1/chat/completions", &init)?;
 
     let mut response = Fetch::Request(request).send().await?;
-
+    if response.status_code() != 200 {
+        server.send(&StreamItem::Finish(
+            stream_parser::FinishReason::Unavailable,
+        ))?;
+        server.close::<String>(None, None)?;
+        return Ok(());
+    }
     let body = response.stream()?;
 
     let mut json_stream = stream_parser::ChatStreamParser::parse_byte_stream(body);
 
     while let Some(msg) = json_stream.next().await {
-        let msg = msg?;
-        if matches!(msg, StreamItem::RoleMsg) {
-            continue;
+        match msg {
+            Err(_) => {
+                server.send(&StreamItem::Finish(
+                    stream_parser::FinishReason::Unavailable,
+                ))?;
+            }
+            Ok(StreamItem::RoleMsg) => continue,
+            Ok(msg) => server.send(&msg)?,
         }
-        server.send(&(msg))?;
     }
 
     server.close::<String>(None, None)?;

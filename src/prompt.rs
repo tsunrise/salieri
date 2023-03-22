@@ -7,7 +7,7 @@ pub enum Role {
     #[serde(rename = "user")]
     User,
     #[serde(rename = "assistant")]
-    Assistant
+    Assistant,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -16,31 +16,41 @@ pub struct Message {
     pub content: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct Prompt{
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Prompt {
     pub model: String,
     pub messages: Vec<Message>,
-    #[serde(default)]
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct RequestToOpenAI {
+    pub model: String,
+    pub messages: Vec<Message>,
     pub stream: bool,
 }
 
 #[cfg(test)]
-mod tests{
+mod tests {
     use super::*;
     #[test]
-    fn json_to_prompt(){
-        let expected = Prompt{
+    fn json_to_prompt() {
+        let expected = Prompt {
             model: "gpt-3.5-turbo".to_string(),
-            messages: vec![Message{
-                role: Role::User,
-                content: "Hello!".to_string()
-            }],
-            stream: false
+            messages: vec![
+                Message {
+                    role: Role::System,
+                    content: "You are a helpful chatbot.".to_string(),
+                },
+                Message {
+                    role: Role::User,
+                    content: "Hello!".to_string(),
+                },
+            ],
         };
 
         let json = r#"{
             "model": "gpt-3.5-turbo",
-            "messages": [{"role": "user", "content": "Hello!"}]
+            "messages": [{"role": "system", "content": "You are a helpful chatbot."}, {"role": "user", "content": "Hello!"}]
           }
           "#;
 
@@ -49,7 +59,7 @@ mod tests{
 
         let toml = r#"
             model = "gpt-3.5-turbo"
-            messages = [{role = "user", content = "Hello!"}]
+            messages = [{role = "system", content = "You are a helpful chatbot."}, {role = "user", content = "Hello!"}]
         "#;
 
         let actual: Prompt = toml::from_str(toml).unwrap();

@@ -1,12 +1,12 @@
+use futures_util::{StreamExt, TryStreamExt};
 use serde_json::json;
 use wasm_bindgen_futures::spawn_local;
-use worker::{*, wasm_bindgen::JsValue, worker_sys::ResponseInit};
-use futures_util::{StreamExt, TryStreamExt};
-mod utils;
+use worker::{wasm_bindgen::JsValue, worker_sys::ResponseInit, *};
 mod prompt;
 mod stream_parser;
-use async_stream::stream;
+mod utils;
 
+use crate::stream_parser::StreamItem;
 
 fn log_request(req: &Request) {
     console_log!(
@@ -58,9 +58,9 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
         .get("/test", |mut req, ctx| {
             let upgrade_header = req.headers().get("Upgrade")?;
             match upgrade_header {
-                Some(x) if x =="websocket" => {
+                Some(x) if x == "websocket" => {
                     // sounds good
-                },
+                }
                 _ => {
                     return Response::error("Expected Upgrade: websocket", 426);
                 }
@@ -73,8 +73,10 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
 
             let openai_key = ctx.var("OPENAI_API_KEY")?.to_string();
             spawn_local(async move {
-                route_chat_to_ws(openai_key, server).await.expect("route_chat_to_ws failed");
-            });  
+                route_chat_to_ws(openai_key, server)
+                    .await
+                    .expect("route_chat_to_ws failed");
+            });
 
             Response::from_websocket(client)
         })
@@ -82,22 +84,34 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
         .await
 }
 
-
 pub async fn route_chat_to_ws(openai_key: String, server: WebSocket) -> worker::Result<()> {
-    let prompt = prompt::Prompt{
+    // wait for the first message from the client
+    let first_msg = server.events()?.next().await.unwrap()?;
+    let user_question = match first_msg {
+        WebsocketEvent::Message(msg) => msg.text().unwrap(),
+        WebsocketEvent::Close(_) => {
+            console_log!("client closed connection");
+            server.close::<String>(None, None)?;
+            return Ok(());
+        }
+    };
+    console_log!("user_question: {}", user_question);
+
+    let prompt = prompt::RequestToOpenAI {
         model: "gpt-3.5-turbo".to_string(),
         messages: vec![
-            prompt::Message{
+            prompt::Message {
                 role: prompt::Role::System,
-                content: "You are a helpful Chat Bot.".to_string()
+                content: "You are a helpful Chat Bot.".to_string(),
             },
-        prompt::Message{
-            role: prompt::Role::User,
-            content: "Hello".to_string()},
+            prompt::Message {
+                role: prompt::Role::User,
+                content: user_question,
+            },
         ],
-        stream: true
+        stream: true,
     };
-    
+
     let auth_text = "Bearer ".to_string() + &openai_key;
 
     let mut headers = Headers::new();
@@ -117,12 +131,15 @@ pub async fn route_chat_to_ws(openai_key: String, server: WebSocket) -> worker::
 
     let body = response.stream()?;
 
-    let mut json_stream = stream_parser::StreamParser::parse_byte_stream(body);
+    let mut json_stream = stream_parser::ChatStreamParser::parse_byte_stream(body);
 
-    while let Some(msg) = json_stream.next().await{
-        console_log!("sent message: {:?}", msg);
-        server.send_with_str(msg?)?
-    };
+    while let Some(msg) = json_stream.next().await {
+        let msg = msg?;
+        if matches!(msg, StreamItem::RoleMsg) {
+            continue;
+        }
+        server.send(&(msg))?;
+    }
 
     server.close::<String>(None, None)?;
 

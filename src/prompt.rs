@@ -46,6 +46,12 @@ impl RequestToOpenAI {
     }
 }
 
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct UserRequest {
+    pub question: String,
+    // TODO:
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

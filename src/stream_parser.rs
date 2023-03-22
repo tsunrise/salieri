@@ -22,7 +22,11 @@ pub enum FinishReason {
 #[derive(Serialize)]
 pub enum StreamItem {
     RoleMsg,
+    #[serde(rename = "start")]
+    Start(u32), // token limit
+    #[serde(rename = "delta")]
     Delta(String),
+    #[serde(rename = "finish")]
     Finish(FinishReason),
 }
 
@@ -37,7 +41,7 @@ impl StreamItem {
                 Some(StreamItem::Finish(finish_reason))
             } else {
                 let delta = choice.get("delta")?;
-                if let Some(role) = delta.get("role") {
+                if let Some(_) = delta.get("role") {
                     Some(StreamItem::RoleMsg)
                 } else {
                     let content = delta.get("content")?;

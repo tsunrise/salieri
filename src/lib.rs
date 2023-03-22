@@ -6,7 +6,7 @@ mod prompt;
 mod stream_parser;
 mod utils;
 
-use crate::stream_parser::StreamItem;
+use crate::{prompt::RequestToOpenAI, stream_parser::StreamItem};
 
 fn log_request(req: &Request) {
     console_log!(
@@ -97,20 +97,8 @@ pub async fn route_chat_to_ws(openai_key: String, server: WebSocket) -> worker::
     };
     console_log!("user_question: {}", user_question);
 
-    let prompt = prompt::RequestToOpenAI {
-        model: "gpt-3.5-turbo".to_string(),
-        messages: vec![
-            prompt::Message {
-                role: prompt::Role::System,
-                content: "You are a helpful Chat Bot.".to_string(),
-            },
-            prompt::Message {
-                role: prompt::Role::User,
-                content: user_question,
-            },
-        ],
-        stream: true,
-    };
+    let prompt = toml::from_str::<prompt::Prompt>(include_str!("../prompt.toml")).unwrap();
+    let request_to_openai = RequestToOpenAI::new(prompt, user_question);
 
     let auth_text = "Bearer ".to_string() + &openai_key;
 
@@ -121,7 +109,7 @@ pub async fn route_chat_to_ws(openai_key: String, server: WebSocket) -> worker::
     let mut init = RequestInit::new();
     init.with_method(Method::Post);
     init.with_headers(headers);
-    let body = serde_json::to_string(&prompt)?;
+    let body = serde_json::to_string(&request_to_openai)?;
     console_log!("body: {}", body);
     init.with_body(Some(JsValue::from_str(&body)));
 

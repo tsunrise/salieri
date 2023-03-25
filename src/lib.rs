@@ -1,7 +1,10 @@
 use futures_util::StreamExt;
-use prompt::UserRequest;
+use prompt::{Config, Prompt, UserRequest};
+use rand::{seq::IteratorRandom, SeedableRng};
+use serde_json::json;
 use wasm_bindgen_futures::spawn_local;
 use worker::{wasm_bindgen::JsValue, *};
+
 mod prompt;
 mod stream_parser;
 mod utils;
@@ -16,6 +19,10 @@ fn log_request(req: &Request) {
         req.cf().coordinates().unwrap_or_default(),
         req.cf().region().unwrap_or_else(|| "unknown region".into())
     );
+}
+
+fn read_config() -> Config {
+    toml::from_str::<Config>(include_str!("../config.toml")).expect("invalid config.toml")
 }
 
 #[event(fetch)]
@@ -51,19 +58,42 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
             server.accept()?;
 
             let openai_key = ctx.var("OPENAI_API_KEY")?.to_string();
+
+            let config = read_config();
+            let prompt = config.prompt;
+
             spawn_local(async move {
-                route_chat_to_ws(&openai_key, server)
+                route_chat_to_ws(&openai_key, server, prompt)
                     .await
                     .expect("route_chat_to_ws failed");
             });
 
             Response::from_websocket(client)
         })
+        .get_async("/hint", |_, _| async move {
+            let config = read_config();
+            let questions = config.questions;
+
+            const NUM_QUESTIONS_SAMPLED: usize = 3;
+            let seed = Date::now().as_millis();
+            let mut rng = rand_xorshift::XorShiftRng::seed_from_u64(seed);
+            let sampled_questions = questions
+                .iter()
+                .choose_multiple(&mut rng, NUM_QUESTIONS_SAMPLED);
+
+            Response::from_json(&json!({
+                "hint": sampled_questions,
+            }))
+        })
         .run(req, env)
         .await
 }
 
-pub async fn route_chat_to_ws(openai_key: &str, server: WebSocket) -> worker::Result<()> {
+pub async fn route_chat_to_ws(
+    openai_key: &str,
+    server: WebSocket,
+    prompt: Prompt,
+) -> worker::Result<()> {
     // wait for the first message from the client
     let first_msg = server.events()?.next().await.unwrap()?;
     let user_request = match first_msg {
@@ -74,7 +104,6 @@ pub async fn route_chat_to_ws(openai_key: &str, server: WebSocket) -> worker::Re
         }
     };
 
-    let prompt = toml::from_str::<prompt::Prompt>(include_str!("../prompt.toml")).unwrap();
     let request_to_openai = RequestToOpenAI::new(prompt, user_request.question);
     server.send(&StreamItem::Start(request_to_openai.max_tokens))?;
 

@@ -23,6 +23,12 @@ pub struct Prompt {
     pub max_tokens: Option<u32>,
 }
 
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Config {
+    pub prompt: Prompt,
+    pub questions: Vec<String>,
+}
+
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct RequestToOpenAI {
     pub model: String,

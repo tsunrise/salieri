@@ -11,4 +11,4 @@ build/
 .dev.vars
 Cargo.lock
 api-test.sh
-prompt.toml
+config.toml

@@ -3,7 +3,7 @@ use futures_util::TryStream;
 use futures_util::{StreamExt, TryStreamExt};
 
 use std::str;
-use worker::{console_log, ByteStream};
+use worker::ByteStream;
 
 use serde::{Deserialize, Serialize};
 

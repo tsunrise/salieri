@@ -18,6 +18,10 @@ toml = "0.7.3"
 futures-core = "0.3"
 futures-util = "0.3"
 async-stream = "0.3"
+rand = "0.8"
+rand_xorshift = "0.3"
+getrandom = { version = "0.2", features = ["js"] }
+
 
 # The `console_error_panic_hook` crate provides better debugging of panics by
 # logging them with `console.error`. This is great for development, but requires

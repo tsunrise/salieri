@@ -68,12 +68,56 @@ fn attach_origin_header_to_resp(req: &Request, resp: &mut Response) -> Result<()
     Ok(attach_origin_to_header(req, &mut headers)?)
 }
 
+#[derive(serde::Deserialize)]
+struct CaptchaResponse {
+    success: bool,
+    #[serde(rename = "error-codes")]
+    error_codes: Vec<String>,
+}
+async fn verify_captcha(
+    token: &str,
+    turnstile_secret_key: &str,
+    remote_ip: &str,
+) -> Result<CaptchaResponse> {
+    // let mut form_data = FormData::new();
+    // form_data.append("secret", turnstile_secret_key)?;
+    // form_data.append("token", &token)?;
+    // form_data.append("remoteip", remote_ip)?;
+    // we write form body manually because RequestInit::withbody is not supported with FormDat
+
+    let mut form_body = String::new();
+    form_body.push_str("secret=");
+    form_body.push_str(turnstile_secret_key);
+    form_body.push_str("&response=");
+    form_body.push_str(&token);
+    form_body.push_str("&remoteip=");
+    form_body.push_str(remote_ip);
+
+    let mut init = RequestInit::new();
+    init.with_method(Method::Post);
+    init.with_body(Some(JsValue::from_str(&form_body)));
+    let mut req = Request::new_with_init(
+        "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+        &init,
+    )?;
+    req.headers_mut()?
+        .set("Content-Type", "application/x-www-form-urlencoded")?;
+
+    Ok(Fetch::Request(req)
+        .send()
+        .await?
+        .json::<CaptchaResponse>()
+        .await?)
+}
+
 // TODO: enforce length limit, and cloudflare turnstile
 pub async fn serve_chat_in_ws(
     openai_key: &str,
+    turnstile_secret_key: &str,
+    remote_ip: &str,
     server: WebSocket,
     prompt: Prompt,
-) -> WorkerResult<()> {
+) -> Result<()> {
     // wait for the first message from the client
     let first_msg = server.events()?.next().await.unwrap()?;
     let user_request = match first_msg {
@@ -83,6 +127,20 @@ pub async fn serve_chat_in_ws(
             return Ok(());
         }
     };
+
+    // verify captcha
+    let captcha_token = user_request
+        .captcha_token
+        .ok_or(error::Error::InvalidRequest(
+            "captcha token is missing".to_string(),
+        ))?;
+    let captcha_resp = verify_captcha(&captcha_token, turnstile_secret_key, remote_ip).await?;
+    if !captcha_resp.success {
+        return Err(error::Error::InvalidRequest(format!(
+            "captcha verification failed: {:?}",
+            captcha_resp.error_codes
+        )));
+    }
 
     let request_to_openai = RequestToOpenAI::new(prompt, user_request.question);
     server.send(&StreamItem::Start(request_to_openai.max_tokens))?;
@@ -103,11 +161,10 @@ pub async fn serve_chat_in_ws(
 
     let mut response = Fetch::Request(request).send().await?;
     if response.status_code() != 200 {
-        server.send(&StreamItem::Finish(
-            stream_parser::FinishReason::Unavailable,
-        ))?;
-        server.close::<String>(None, None)?;
-        return Ok(());
+        return Err(error::Error::OpenAIError(
+            response.status_code(),
+            response.text().await?,
+        ));
     }
     let body = response.stream()?;
 
@@ -147,14 +204,31 @@ pub fn handle_chat(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     server.accept()?;
 
     let openai_key = ctx.var("OPENAI_API_KEY")?.to_string();
+    let turnstile_secret_key = ctx.var("TURNSTILE_SECRET_KEY")?.to_string();
+    let remote_ip = req.headers().get("CF-Connecting-IP")?.unwrap();
 
     let config = read_config();
     let prompt = config.prompt;
 
     spawn_local(async move {
-        serve_chat_in_ws(&openai_key, server, prompt)
-            .await
-            .expect("route_chat_to_ws failed");
+        let server_clone = server.clone();
+
+        match serve_chat_in_ws(
+            &openai_key,
+            &turnstile_secret_key,
+            &remote_ip,
+            server,
+            prompt,
+        )
+        .await
+        {
+            Ok(_) => {}
+            Err(e) => {
+                console_log!("error: {:?}", e);
+                server_clone.send(&StreamItem::from(e)).unwrap();
+                server_clone.close::<String>(None, None).unwrap();
+            }
+        }
     });
 
     let mut resp = Response::from_websocket(client)?;

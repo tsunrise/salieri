@@ -55,7 +55,7 @@ impl RequestToOpenAI {
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct UserRequest {
     pub question: String,
-    // TODO:
+    pub captcha_token: Option<String>,
 }
 
 #[cfg(test)]

@@ -6,8 +6,12 @@ use worker::Response;
 pub enum Error {
     #[error("invalid request: {0}")]
     InvalidRequest(String),
-    #[error("internal error")]
+    #[error("internal error: worker")]
     WorkerError(#[from] worker::Error),
+    #[error("internal error: serde_json")]
+    SerdeJsonError(#[from] serde_json::Error),
+    #[error("OpenAI error: {0}")]
+    OpenAIError(u16, String),
 }
 
 impl Error {
@@ -15,6 +19,8 @@ impl Error {
         match self {
             Error::InvalidRequest(_) => 400,
             Error::WorkerError(_) => 500,
+            Error::SerdeJsonError(_) => 500,
+            Error::OpenAIError(_, _) => 500,
         }
     }
 

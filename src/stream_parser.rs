@@ -28,6 +28,8 @@ pub enum StreamItem {
     Delta(String),
     #[serde(rename = "finish")]
     Finish(FinishReason),
+    #[serde(rename = "error")]
+    Error(String),
 }
 
 impl StreamItem {
@@ -52,6 +54,12 @@ impl StreamItem {
         } else {
             None
         }
+    }
+}
+
+impl From<crate::error::Error> for StreamItem {
+    fn from(err: crate::error::Error) -> Self {
+        StreamItem::Error(err.to_string())
     }
 }
 

@@ -21,6 +21,7 @@ async-stream = "0.3"
 rand = "0.8"
 rand_xorshift = "0.3"
 getrandom = { version = "0.2", features = ["js"] }
+thiserror = "1.0"
 
 
 # The `console_error_panic_hook` crate provides better debugging of panics by

@@ -142,7 +142,7 @@ pub async fn serve_chat_in_ws(
         )));
     }
 
-    let request_to_openai = RequestToOpenAI::new(prompt, user_request.question);
+    let request_to_openai = RequestToOpenAI::new(prompt, user_request.question)?;
     server.send(&StreamItem::Start(request_to_openai.max_tokens))?;
 
     let auth_text = "Bearer ".to_string() + openai_key;

@@ -1,3 +1,4 @@
+use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -38,17 +39,27 @@ pub struct RequestToOpenAI {
 }
 
 impl RequestToOpenAI {
-    pub fn new(mut prompt: Prompt, user_question: String) -> Self {
+    pub fn new(mut prompt: Prompt, user_question: String) -> Result<Self> {
+        // length check
+        const MAX_LENGTH: usize = 300; // TODO: make this configurable
+        if user_question.len() > MAX_LENGTH {
+            return Err(Error::InvalidRequest(format!(
+                "question is too long ({} > {})",
+                user_question.len(),
+                MAX_LENGTH
+            )));
+        }
+
         prompt.messages.push(Message {
             role: Role::User,
             content: user_question,
         });
-        Self {
+        Ok(Self {
             model: prompt.model,
             messages: prompt.messages,
             max_tokens: prompt.max_tokens.unwrap_or(128),
             stream: true,
-        }
+        })
     }
 }
 

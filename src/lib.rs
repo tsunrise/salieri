@@ -68,6 +68,7 @@ fn attach_origin_header_to_resp(req: &Request, resp: &mut Response) -> Result<()
     Ok(attach_origin_to_header(req, &mut headers)?)
 }
 
+// TODO: enforce length limit, and cloudflare turnstile
 pub async fn serve_chat_in_ws(
     openai_key: &str,
     server: WebSocket,

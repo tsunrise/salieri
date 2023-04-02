@@ -5,9 +5,9 @@ use rand::{seq::IteratorRandom, SeedableRng};
 use serde_json::json;
 use wasm_bindgen_futures::spawn_local;
 use worker::{
-    console_log, event, wasm_bindgen::JsValue, wasm_bindgen_futures, Date, Env, Fetch, Headers,
-    Method, Request, RequestInit, Response, Result as WorkerResult, RouteContext, Router,
-    WebSocket, WebSocketPair, WebsocketEvent,
+    console_error, console_log, event, wasm_bindgen::JsValue, wasm_bindgen_futures, Date, Env,
+    Fetch, Headers, Method, Request, RequestInit, Response, Result as WorkerResult, RouteContext,
+    Router, WebSocket, WebSocketPair, WebsocketEvent,
 };
 
 mod error;
@@ -123,7 +123,7 @@ pub async fn serve_chat_in_ws(
     let user_request = match first_msg {
         WebsocketEvent::Message(msg) => msg.json::<UserRequest>()?,
         WebsocketEvent::Close(_) => {
-            server.close::<String>(None, None)?;
+            // server.close::<String>(None, None)?;
             return Ok(());
         }
     };
@@ -182,8 +182,6 @@ pub async fn serve_chat_in_ws(
         }
     }
 
-    server.close::<String>(None, None)?;
-
     Ok(())
 }
 
@@ -226,7 +224,6 @@ pub fn handle_chat(req: Request, ctx: RouteContext<()>) -> Result<Response> {
             Err(e) => {
                 console_log!("error: {:?}", e);
                 server_clone.send(&StreamItem::from(e)).unwrap();
-                server_clone.close::<String>(None, None).unwrap();
             }
         }
     });
@@ -258,7 +255,7 @@ fn result_to_response(result: Result<Response>) -> Response {
     match result {
         Ok(response) => response,
         Err(e) => {
-            console_log!("error: {:?}", e);
+            console_error!("error: {:?}", e);
             Response::from(e)
         }
     }

@@ -260,6 +260,8 @@ pub fn handle_chat(req: Request, ctx: RouteContext<()>) -> Result<Response> {
                 server_clone.send(&StreamItem::from(e)).unwrap();
             }
         }
+
+        server_clone.close(Some(1000), Some("done")).unwrap();
     });
 
     let mut resp = Response::from_websocket(client)?;
@@ -305,11 +307,11 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> WorkerResult
     let router = Router::new();
 
     router
-        .get("/chat", |req, ctx| {
+        .get("/api/salieri/chat", |req, ctx| {
             let result = handle_chat(req, ctx);
             Ok(result_to_response(result))
         })
-        .get_async("/hint", |req, ctx| async move {
+        .get_async("/api/salieri/hint", |req, ctx| async move {
             let result = handle_hint(req, ctx).await;
             Ok(result_to_response(result))
         })

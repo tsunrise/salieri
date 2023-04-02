@@ -1,13 +1,13 @@
 use crate::error::Result;
 use futures_util::StreamExt;
 use prompt::{Config, Prompt, UserRequest};
-use rand::{seq::IteratorRandom, SeedableRng};
+use rand::{seq::SliceRandom, SeedableRng};
 use serde_json::json;
 use wasm_bindgen_futures::spawn_local;
 use worker::{
-    console_error, console_log, event, wasm_bindgen::JsValue, wasm_bindgen_futures, Date, Env,
-    Fetch, Headers, Method, Request, RequestInit, Response, Result as WorkerResult, RouteContext,
-    Router, WebSocket, WebSocketPair, WebsocketEvent,
+    console_error, console_log, event, js_sys::encode_uri_component, wasm_bindgen::JsValue,
+    wasm_bindgen_futures, Date, Env, Fetch, Headers, Method, Request, RequestInit, Response,
+    Result as WorkerResult, RouteContext, Router, WebSocket, WebSocketPair, WebsocketEvent,
 };
 
 mod error;
@@ -74,6 +74,14 @@ struct CaptchaResponse {
     #[serde(rename = "error-codes")]
     error_codes: Vec<String>,
 }
+
+fn encode_form_data(s: &str) -> Result<String> {
+    Ok(encode_uri_component(s)
+        .as_string()
+        .ok_or(error::Error::InvalidRequest(
+            "invalid form data".to_string(),
+        ))?)
+}
 async fn verify_captcha(
     token: &str,
     turnstile_secret_key: &str,
@@ -87,11 +95,11 @@ async fn verify_captcha(
 
     let mut form_body = String::new();
     form_body.push_str("secret=");
-    form_body.push_str(turnstile_secret_key);
+    form_body.push_str(&encode_form_data(turnstile_secret_key)?);
     form_body.push_str("&response=");
-    form_body.push_str(&token);
+    form_body.push_str(&encode_form_data(token)?);
     form_body.push_str("&remoteip=");
-    form_body.push_str(remote_ip);
+    form_body.push_str(&encode_form_data(remote_ip)?);
 
     let mut init = RequestInit::new();
     init.with_method(Method::Post);
@@ -115,6 +123,7 @@ pub async fn serve_chat_in_ws(
     openai_key: &str,
     turnstile_secret_key: &str,
     remote_ip: &str,
+    location: &str,
     server: WebSocket,
     prompt: Prompt,
 ) -> Result<()> {
@@ -142,7 +151,7 @@ pub async fn serve_chat_in_ws(
         )));
     }
 
-    let request_to_openai = RequestToOpenAI::new(prompt, user_request.question)?;
+    let request_to_openai = RequestToOpenAI::new(prompt, user_request.question.clone())?;
     server.send(&StreamItem::Start(request_to_openai.max_tokens))?;
 
     let auth_text = "Bearer ".to_string() + openai_key;
@@ -169,6 +178,7 @@ pub async fn serve_chat_in_ws(
     let body = response.stream()?;
 
     let mut json_stream = stream_parser::ChatStreamParser::parse_byte_stream(body);
+    let mut chatbot_answer = String::new();
 
     while let Some(msg) = json_stream.next().await {
         match msg {
@@ -178,9 +188,24 @@ pub async fn serve_chat_in_ws(
                 ))?;
             }
             Ok(StreamItem::RoleMsg) => continue,
-            Ok(msg) => server.send(&msg)?,
+            Ok(msg) => {
+                if let StreamItem::Delta(delta) = &msg {
+                    chatbot_answer.push_str(&delta);
+                }
+                server.send(&msg)?
+            }
         }
     }
+
+    console_log!(
+        "QA_LOG: {}",
+        json!({
+            "question": user_request.question,
+            "response": chatbot_answer,
+            "remote_ip": remote_ip,
+            "location": location,
+        })
+    );
 
     Ok(())
 }
@@ -204,6 +229,14 @@ pub fn handle_chat(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     let openai_key = ctx.var("OPENAI_API_KEY")?.to_string();
     let turnstile_secret_key = ctx.var("TURNSTILE_SECRET_KEY")?.to_string();
     let remote_ip = req.headers().get("CF-Connecting-IP")?.unwrap();
+    let cf = req.cf();
+    let location = format!(
+        "{} - {} - {} - {:?}",
+        cf.colo(),
+        cf.country().unwrap_or_else(|| "unknown".to_string()),
+        cf.city().unwrap_or_else(|| "unknown".to_string()),
+        cf.coordinates().unwrap_or_else(|| (0., 0.)),
+    );
 
     let config = read_config();
     let prompt = config.prompt;
@@ -215,6 +248,7 @@ pub fn handle_chat(req: Request, ctx: RouteContext<()>) -> Result<Response> {
             &openai_key,
             &turnstile_secret_key,
             &remote_ip,
+            &location,
             server,
             prompt,
         )
@@ -235,17 +269,17 @@ pub fn handle_chat(req: Request, ctx: RouteContext<()>) -> Result<Response> {
 
 pub async fn handle_hint(req: Request, _ctx: RouteContext<()>) -> Result<Response> {
     let config = read_config();
-    let questions = config.questions;
+    let mut questions = config.questions;
 
     const NUM_QUESTIONS_SAMPLED: usize = 3;
     let seed = Date::now().as_millis();
     let mut rng = rand_xorshift::XorShiftRng::seed_from_u64(seed);
-    let sampled_questions = questions
-        .iter()
-        .choose_multiple(&mut rng, NUM_QUESTIONS_SAMPLED);
+    questions.shuffle(&mut rng);
+    let sampled_questions = &questions[..NUM_QUESTIONS_SAMPLED];
 
     let mut resp = Response::from_json(&json!({
-        "hint": sampled_questions,
+        "welcome": config.welcome,
+        "suggested_questions": sampled_questions,
     }))?;
     attach_origin_to_header(&req, resp.headers_mut())?;
     Ok(resp)

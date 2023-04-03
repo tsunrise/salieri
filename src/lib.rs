@@ -124,6 +124,7 @@ pub async fn serve_chat_in_ws(
     turnstile_secret_key: &str,
     remote_ip: &str,
     location: &str,
+    timezone: impl chrono::TimeZone,
     server: WebSocket,
     prompt: Prompt,
 ) -> Result<()> {
@@ -151,7 +152,7 @@ pub async fn serve_chat_in_ws(
         )));
     }
 
-    let request_to_openai = RequestToOpenAI::new(prompt, user_request.question.clone())?;
+    let request_to_openai = RequestToOpenAI::new(prompt, user_request.question.clone(), timezone)?;
     server.send(&StreamItem::Start(request_to_openai.max_tokens))?;
 
     let auth_text = "Bearer ".to_string() + openai_key;
@@ -211,6 +212,7 @@ pub async fn serve_chat_in_ws(
 }
 
 pub fn handle_chat(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    req.cf().timezone();
     let upgrade_header = req.headers().get("Upgrade")?;
     match upgrade_header {
         Some(x) if x == "websocket" => {
@@ -237,6 +239,7 @@ pub fn handle_chat(req: Request, ctx: RouteContext<()>) -> Result<Response> {
         cf.city().unwrap_or_else(|| "unknown".to_string()),
         cf.coordinates().unwrap_or_else(|| (0., 0.)),
     );
+    let timezone = cf.timezone();
 
     let config = read_config();
     let prompt = config.prompt;
@@ -249,6 +252,7 @@ pub fn handle_chat(req: Request, ctx: RouteContext<()>) -> Result<Response> {
             &turnstile_secret_key,
             &remote_ip,
             &location,
+            timezone,
             server,
             prompt,
         )

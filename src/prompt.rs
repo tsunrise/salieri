@@ -1,5 +1,6 @@
 use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
+use worker::console_log;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum Role {
@@ -39,8 +40,30 @@ pub struct RequestToOpenAI {
     pub stream: bool, // true
 }
 
+pub fn get_local_datetime(timezone: impl chrono::TimeZone) -> String {
+    use chrono::prelude::*;
+    let js_date = js_sys::Date::new_0();
+    let now_timestamp = js_date.get_time() / 1000.; // convert milliseconds to seconds
+    let naive_datetime =
+        chrono::NaiveDateTime::from_timestamp_opt(now_timestamp as i64, 0).unwrap();
+    let local_datetime = timezone.from_utc_datetime(&naive_datetime);
+    format!(
+        "{}-{:02}-{:02} {}:{}:{}",
+        local_datetime.year(),
+        local_datetime.month(),
+        local_datetime.day(),
+        local_datetime.hour(),
+        local_datetime.minute(),
+        local_datetime.second()
+    )
+}
+
 impl RequestToOpenAI {
-    pub fn new(mut prompt: Prompt, user_question: String) -> Result<Self> {
+    pub fn new(
+        mut prompt: Prompt,
+        user_question: String,
+        timezone: impl chrono::TimeZone,
+    ) -> Result<Self> {
         // length check
         const MAX_LENGTH: usize = 300; // TODO: make this configurable
         if user_question.len() > MAX_LENGTH {
@@ -55,6 +78,21 @@ impl RequestToOpenAI {
             role: Role::User,
             content: user_question,
         });
+
+        if prompt.messages[0].role != Role::System {
+            return Err(Error::InternalError(
+                "first message must be a system message".to_string(),
+            ));
+        }
+
+        // replace [CURRENT_DATE] in first message with current date
+        let local_date = get_local_datetime(timezone);
+        console_log!("local date: {}", local_date);
+
+        prompt.messages[0].content = prompt.messages[0]
+            .content
+            .replace("[CURRENT_TIME]", &local_date);
+
         Ok(Self {
             model: prompt.model,
             messages: prompt.messages,

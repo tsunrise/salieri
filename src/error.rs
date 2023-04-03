@@ -12,6 +12,8 @@ pub enum Error {
     SerdeJsonError(#[from] serde_json::Error),
     #[error("OpenAI error: {0}")]
     OpenAIError(u16, String),
+    #[error("internal error")]
+    InternalError(String),
 }
 
 impl Error {
@@ -21,6 +23,7 @@ impl Error {
             Error::WorkerError(_) => 500,
             Error::SerdeJsonError(_) => 500,
             Error::OpenAIError(_, _) => 500,
+            Error::InternalError(_) => 500,
         }
     }
 

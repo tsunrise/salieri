@@ -2,6 +2,7 @@ name = "salieri"                  # todo
 main = "build/worker/shim.mjs"
 compatibility_date = "2022-01-20"
 
+logpush = true
 [vars]
 WORKERS_RS_VERSION = "0.0.11"
 TURNSTILE_SITEKEY = "0x4AAAAAAADKETLTiaTObZqk"

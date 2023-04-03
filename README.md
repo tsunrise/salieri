@@ -1,50 +1,46 @@
-# Template: worker-rust
+# Salieri System
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflare/templates/tree/main/worker-rust)
+## Overview
+This repository contains the source code for the Salieri System, a component of my personal website located at <https://tomshen.io>.
 
-A template for kick starting a Cloudflare worker project using [`workers-rs`](https://github.com/cloudflare/workers-rs).
+The Salieri System is an API gateway developed in Rust that seamlessly integrates OpenAI's Chat API into my website. The gateway is deployed using Cloudflare Workers, providing fast and secure access to the service.
 
-This template is designed for compiling Rust to WebAssembly and publishing the resulting worker to Cloudflare's [edge infrastructure](https://www.cloudflare.com/network/).
+## Prerequisites
+To build and deploy the Salieri System, you need to have Rust installed on your system. If you don't have Rust, you can install it by following the instructions at <https://rustup.rs/>.
 
-## Setup
+## Configuration
+To successfully build this service, a `config.toml` file is required. This file specifies various configuration options, including the welcome message, hint questions, and the model used for the OpenAI Chat API. An example `config.toml` file is provided below:
 
-To create a `my-project` directory using this template, run:
+```toml
+welcome = "<Your welcome message>"
+questions = [
+    "Who are you?",
+    # insert your hint questions here
+]
 
-```sh
-$ npm init cloudflare my-project worker-rust
-# or
-$ yarn create cloudflare my-project worker-rust
-# or
-$ pnpm create cloudflare my-project worker-rust
+[prompt]
+messages = [
+    { role = "system", content = "You are a digital copy of Tom." },
+    { role = "user", content = "Act as Tom... <your instruction>" },
+    { role = "assistant", content = "Understood. I will act as Tom and answer very concisely." },
+]
+model = "gpt-3.5-turbo"
+max_tokens = 128
 ```
 
-> **Note:** Each command invokes [`create-cloudflare`](https://www.npmjs.com/package/create-cloudflare) for project creation.
+## Build and Deployment
 
-## Usage
+After configuring the `config.toml` file, you can build and deploy the Salieri System using the following steps:
 
-This template starts you off with a `src/lib.rs` file, acting as an entrypoint for requests hitting your Worker. Feel free to add more code in this file, or create Rust modules anywhere else for this project to use.
+1. Open your terminal and navigate to the root directory of the Salieri System repository.
 
-With `wrangler`, you can build, test, and deploy your Worker with the following commands:
+2. Use Wrangler CLI to publish the service to Cloudflare Workers. If you haven't installed Wrangler, you can do so using npm. Run the following command to publish the service:
 
-```sh
-# compiles your project to WebAssembly and will warn of any issues
-$ npm run build
-
-# run your Worker in an ideal development workflow (with a local server, file watcher & more)
-$ npm run dev
-
-# deploy your Worker globally to the Cloudflare network (update your wrangler.toml file for configuration)
-$ npm run deploy
+```bash
+npx wrangler publish
 ```
 
-Read the latest `worker` crate documentation here: https://docs.rs/worker
+The `wrangler publish` command will build the Rust code, package it as a Cloudflare Worker, and deploy it to your Cloudflare account. Once the deployment is successful, you'll receive a confirmation message with the URL of your deployed service.
 
-## WebAssembly
-
-`workers-rs` (the Rust SDK for Cloudflare Workers used in this template) is meant to be executed as compiled WebAssembly, and as such so **must** all the code you write and depend upon. All crates and modules used in Rust-based Workers projects have to compile to the `wasm32-unknown-unknown` triple.
-
-Read more about this on the [`workers-rs`](https://github.com/cloudflare/workers-rs) project README.
-
-## Issues
-
-If you have any problems with the `worker` crate, please open an issue on the upstream project issue tracker on the [`workers-rs` repository](https://github.com/cloudflare/workers-rs).
+## License
+This project is licensed under the [MIT License](LICENSE).

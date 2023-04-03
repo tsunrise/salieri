@@ -1,9 +1,10 @@
 # Salieri System
 
 ## Overview
-This repository contains the source code for the Salieri System, a component of my personal website located at <https://tomshen.io>.
 
-The Salieri System is an API gateway developed in Rust that seamlessly integrates OpenAI's Chat API into my website. The gateway is deployed using Cloudflare Workers, providing fast and secure access to the service.
+The Salieri System is an API gateway that integrates OpenAI's Chat API into my personal website <https://tomshen.io>, deployed using Cloudflare Workers.
+
+**Warning:** Please note that the Salieri System is specifically designed for my personal use and may contain custom configurations tailored to my website. As a result, you may find it nontrivial to integrate into your own projects. 
 
 ## Prerequisites
 To build and deploy the Salieri System, you need to have Rust installed on your system. If you don't have Rust, you can install it by following the instructions at <https://rustup.rs/>.

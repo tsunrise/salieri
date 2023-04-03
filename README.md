@@ -28,6 +28,16 @@ model = "gpt-3.5-turbo"
 max_tokens = 128
 ```
 
+You will also need to setup the following environment variables: 
+- `TURNSTILE_SECRET_KEY`: The secret key for Cloudflare Turnstile. 
+- `OPENAI_API_KEY`: The API key for OpenAI's Chat API.
+
+You can use the following command to set the environment variables:
+
+```bash
+wrangler secret put <variable_name>
+```
+
 ## Build and Deployment
 
 After configuring the `config.toml` file, you can build and deploy the Salieri System using the following steps:

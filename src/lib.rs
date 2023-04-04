@@ -47,11 +47,7 @@ async fn set_config(config: &Config, ctx: &RouteContext<()>) -> Result<()> {
     Ok(())
 }
 
-const ALLOWED_ORIGINS: [&str; 3] = [
-    "https://tomshen.io",
-    "https://v2.tomshen.pages.dev",
-    "http://localhost:3000",
-];
+const ALLOWED_ORIGINS: [&str; 2] = ["https://tomshen.io", "http://localhost:3000"];
 
 fn allowed_origin_header(origin: &str) -> Result<String> {
     if ALLOWED_ORIGINS.contains(&origin) {
@@ -392,6 +388,12 @@ async fn handle_config_post(mut req: Request, ctx: RouteContext<()>) -> Result<R
     Ok(resp)
 }
 
+async fn handle_options(req: Request, _ctx: RouteContext<()>) -> Result<Response> {
+    let mut resp = Response::empty()?;
+    attach_origin_to_header(&req, resp.headers_mut())?;
+    Ok(resp)
+}
+
 #[event(fetch)]
 pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> WorkerResult<Response> {
     log_request(&req);
@@ -402,6 +404,10 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> WorkerResult
     let router = Router::new();
 
     router
+        .options_async("/api/salieri/*", |req, ctx| async move {
+            let resp = handle_options(req, ctx).await;
+            Ok(result_to_response(resp))
+        })
         .get_async("/api/salieri/chat", |req, ctx| async move {
             let result = handle_chat(req, ctx).await;
             Ok(result_to_response(result))

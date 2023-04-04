@@ -47,11 +47,7 @@ async fn set_config(config: &Config, ctx: &RouteContext<()>) -> Result<()> {
     Ok(())
 }
 
-const ALLOWED_ORIGINS: [&str; 3] = [
-    "https://tomshen.io",
-    "https://v2.tomshen.pages.dev",
-    "http://localhost:3000",
-];
+const ALLOWED_ORIGINS: [&str; 2] = ["https://tomshen.io", "http://localhost:3000"];
 
 fn allowed_origin_header(origin: &str) -> Result<String> {
     if ALLOWED_ORIGINS.contains(&origin) {

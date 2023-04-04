@@ -12,3 +12,6 @@ build/
 Cargo.lock
 api-test.sh
 config.toml
+config.json
+upload_config.sh
+test.sh

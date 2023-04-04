@@ -28,12 +28,23 @@ fn log_request(req: &Request) {
     );
 }
 
-fn read_config() -> Config {
-    toml::from_str::<Config>(include_str!("../config.toml")).expect("invalid config.toml")
+const KV_BINDING: &str = "salieri";
+
+async fn read_config(ctx: &RouteContext<()>) -> Result<Config> {
+    // toml::from_str::<Config>(include_str!("../config.toml")).expect("invalid config.toml")
+    let kv = ctx.kv(KV_BINDING)?;
+    let config = kv
+        .get("config")
+        .json::<Config>()
+        .await?
+        .ok_or_else(|| error::Error::InternalError("config not found".into()))?;
+    Ok(config)
 }
 
-fn set_config(config: Config) {
-    todo!()
+async fn set_config(config: &Config, ctx: &RouteContext<()>) -> Result<()> {
+    let kv = ctx.kv(KV_BINDING)?;
+    kv.put("config", config)?.execute().await?;
+    Ok(())
 }
 
 const ALLOWED_ORIGINS: [&str; 3] = [
@@ -216,7 +227,7 @@ pub async fn serve_chat_in_ws(
     Ok(())
 }
 
-pub fn handle_chat(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+pub async fn handle_chat(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     req.cf().timezone();
     let upgrade_header = req.headers().get("Upgrade")?;
     match upgrade_header {
@@ -246,7 +257,7 @@ pub fn handle_chat(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     );
     let timezone = cf.timezone();
 
-    let config = read_config();
+    let config = read_config(&ctx).await?;
     let prompt = config.prompt;
 
     spawn_local(async move {
@@ -278,8 +289,8 @@ pub fn handle_chat(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     Ok(resp)
 }
 
-pub async fn handle_hint(req: Request, _ctx: RouteContext<()>) -> Result<Response> {
-    let config = read_config();
+pub async fn handle_hint(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let config = read_config(&ctx).await?;
     let mut questions = config.questions;
 
     const NUM_QUESTIONS_SAMPLED: usize = 3;
@@ -307,6 +318,10 @@ fn result_to_response(result: Result<Response>) -> Response {
 }
 
 async fn verify_identity(req: &Request, env: &Env) -> Result<()> {
+    if env.var("DEV_MODE")?.to_string() == "1" {
+        console_log!("DEV_MODE is on, skipping identity verification");
+        return Ok(());
+    }
     let admin_name = env
         .var("ADMIN_NAME")
         .expect("ADMIN_NAME not provided")
@@ -355,11 +370,24 @@ async fn verify_identity(req: &Request, env: &Env) -> Result<()> {
     Ok(())
 }
 
-async fn handle_config(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+async fn handle_config_get(req: Request, ctx: RouteContext<()>) -> Result<Response> {
     verify_identity(&req, &ctx.env).await?;
 
-    let config = read_config();
+    let config = read_config(&ctx).await?;
     let mut resp = Response::from_json(&config)?;
+    attach_origin_to_header(&req, resp.headers_mut())?;
+    Ok(resp)
+}
+
+async fn handle_config_post(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    verify_identity(&req, &ctx.env).await?;
+
+    let config: Config = req.json().await?;
+    set_config(&config, &ctx).await?;
+
+    let mut resp = Response::from_json(&json!({
+        "success": true,
+    }))?;
     attach_origin_to_header(&req, resp.headers_mut())?;
     Ok(resp)
 }
@@ -374,8 +402,8 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> WorkerResult
     let router = Router::new();
 
     router
-        .get("/api/salieri/chat", |req, ctx| {
-            let result = handle_chat(req, ctx);
+        .get_async("/api/salieri/chat", |req, ctx| async move {
+            let result = handle_chat(req, ctx).await;
             Ok(result_to_response(result))
         })
         .get_async("/api/salieri/hint", |req, ctx| async move {
@@ -383,7 +411,11 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> WorkerResult
             Ok(result_to_response(result))
         })
         .get_async("/api/salieri/config", |req, ctx| async move {
-            let result = handle_config(req, ctx).await;
+            let result = handle_config_get(req, ctx).await;
+            Ok(result_to_response(result))
+        })
+        .post_async("/api/salieri/config", |req, ctx| async move {
+            let result = handle_config_post(req, ctx).await;
             Ok(result_to_response(result))
         })
         .run(req, env)

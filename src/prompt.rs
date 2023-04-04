@@ -1,6 +1,5 @@
 use crate::error::{Error, Result};
 use serde::{Deserialize, Serialize};
-use worker::console_log;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum Role {
@@ -87,7 +86,6 @@ impl RequestToOpenAI {
 
         // replace [CURRENT_DATE] in first message with current date
         let local_date = get_local_datetime(timezone);
-        console_log!("local date: {}", local_date);
 
         prompt.messages[0].content = prompt.messages[0]
             .content

@@ -10,6 +10,8 @@ pub enum Error {
     Forbidden,
     #[error("internal error: worker")]
     WorkerError(#[from] worker::Error),
+    #[error("internal error: kv")]
+    KvError(#[from] worker::kv::KvError),
     #[error("internal error: serde_json")]
     SerdeJsonError(#[from] serde_json::Error),
     #[error("OpenAI error: {0}")]
@@ -24,6 +26,7 @@ impl Error {
             Error::InvalidRequest(_) => 400,
             Error::Forbidden => 403,
             Error::WorkerError(_) => 500,
+            Error::KvError(_) => 500,
             Error::SerdeJsonError(_) => 500,
             Error::OpenAIError(_, _) => 500,
             Error::InternalError(_) => 500,

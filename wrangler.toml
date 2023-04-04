@@ -17,6 +17,7 @@ WORKERS_RS_VERSION = "0.0.11"
 TURNSTILE_SITEKEY = "0x4AAAAAAADKETLTiaTObZqk"
 ADMIN_NAME = "tomshen"
 ADMIN_EMAILS = "tom.shen.cn@gmail.com,me@tomshen.io,tomshen@stanford.edu"
+DEV_MODE = "0"
 
 [build]
 command = "cargo install -q worker-build && worker-build --release"

@@ -392,6 +392,12 @@ async fn handle_config_post(mut req: Request, ctx: RouteContext<()>) -> Result<R
     Ok(resp)
 }
 
+fn handle_options(req: Request) -> Result<Response> {
+    let mut resp = Response::empty()?;
+    attach_origin_to_header(&req, resp.headers_mut())?;
+    Ok(resp)
+}
+
 #[event(fetch)]
 pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> WorkerResult<Response> {
     log_request(&req);
@@ -416,6 +422,10 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> WorkerResult
         })
         .post_async("/api/salieri/config", |req, ctx| async move {
             let result = handle_config_post(req, ctx).await;
+            Ok(result_to_response(result))
+        })
+        .options_async("/api/salieri/:any", |req, _| async move {
+            let result = handle_options(req);
             Ok(result_to_response(result))
         })
         .run(req, env)

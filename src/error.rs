@@ -6,6 +6,8 @@ use worker::Response;
 pub enum Error {
     #[error("invalid request: {0}")]
     InvalidRequest(String),
+    #[error("forbidden")]
+    Forbidden,
     #[error("internal error: worker")]
     WorkerError(#[from] worker::Error),
     #[error("internal error: serde_json")]
@@ -20,6 +22,7 @@ impl Error {
     fn status_code(&self) -> u16 {
         match self {
             Error::InvalidRequest(_) => 400,
+            Error::Forbidden => 403,
             Error::WorkerError(_) => 500,
             Error::SerdeJsonError(_) => 500,
             Error::OpenAIError(_, _) => 500,

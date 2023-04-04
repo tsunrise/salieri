@@ -18,14 +18,14 @@ pub struct Message {
     pub content: String,
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Prompt {
     pub model: String,
     pub messages: Vec<Message>,
     pub max_tokens: Option<u32>,
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     pub prompt: Prompt,
     pub questions: Vec<String>,
@@ -130,7 +130,8 @@ mod tests {
 
         let json = r#"{
             "model": "gpt-3.5-turbo",
-            "messages": [{"role": "system", "content": "You are a helpful chatbot."}, {"role": "user", "content": "Hello!"}]
+            "messages": [{"role": "system", "content": "You are a helpful chatbot."}, {"role": "user", "content": "Hello!"}],
+            "extra": "this field is ignored"
           }
           "#;
 

@@ -1,11 +1,22 @@
 name = "salieri"                  # todo
 main = "build/worker/shim.mjs"
 compatibility_date = "2022-01-20"
-
 logpush = true
+
+kv_namespaces = [
+    { binding = "salieri", id = "ab0317c9789c49bbb08b7a7a49c56504", preview_id = "85b6e46c431a400e9c35da2246cb06aa" },
+]
+
+routes = [
+    { pattern = "tomshen.io/api/salieri/*", zone_name = "tomshen.io" },
+    { pattern = "salieri-admin.tomshen.io/api/salieri/*", zone_name = "tomshen.io" },
+]
+
 [vars]
 WORKERS_RS_VERSION = "0.0.11"
 TURNSTILE_SITEKEY = "0x4AAAAAAADKETLTiaTObZqk"
+ADMIN_NAME = "tomshen"
+ADMIN_EMAILS = "tom.shen.cn@gmail.com,me@tomshen.io,tomshen@stanford.edu"
 
 [build]
 command = "cargo install -q worker-build && worker-build --release"

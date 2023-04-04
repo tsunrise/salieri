@@ -2,6 +2,7 @@ use crate::error::Result;
 use futures_util::StreamExt;
 use prompt::{Config, Prompt, UserRequest};
 use rand::{seq::SliceRandom, SeedableRng};
+use serde::Deserialize;
 use serde_json::json;
 use wasm_bindgen_futures::spawn_local;
 use worker::{
@@ -29,6 +30,10 @@ fn log_request(req: &Request) {
 
 fn read_config() -> Config {
     toml::from_str::<Config>(include_str!("../config.toml")).expect("invalid config.toml")
+}
+
+fn set_config(config: Config) {
+    todo!()
 }
 
 const ALLOWED_ORIGINS: [&str; 3] = [
@@ -301,6 +306,64 @@ fn result_to_response(result: Result<Response>) -> Response {
     }
 }
 
+async fn verify_identity(req: &Request, env: &Env) -> Result<()> {
+    let admin_name = env
+        .var("ADMIN_NAME")
+        .expect("ADMIN_NAME not provided")
+        .to_string();
+    let admin_emails_concat = env
+        .var("ADMIN_EMAILS")
+        .expect("ADMIN_EMAILS not provided")
+        .to_string(); // comma separated
+    let admin_emails: Vec<&str> = admin_emails_concat.split(',').collect();
+
+    let api = format!(
+        "https://{}.cloudflareaccess.com/cdn-cgi/access/get-identity",
+        admin_name
+    );
+
+    // for now, we trust Cloudflare and send all cookies for simplicity
+    let cookie = req
+        .headers()
+        .get("Cookie")?
+        .ok_or_else(|| error::Error::InvalidRequest("Missing Cookies".to_string()))?;
+    let mut headers = Headers::new();
+    headers.set("Cookie", &cookie)?;
+    let req = Request::new_with_init(
+        &api,
+        RequestInit::new()
+            .with_method(Method::Get)
+            .with_headers(headers),
+    )?;
+    let mut resp = Fetch::Request(req).send().await?;
+    #[derive(Deserialize)]
+    struct Identity {
+        err: Option<String>,
+        email: Option<String>,
+    }
+    let identity: Identity = resp.json().await?;
+    if let Some(_) = identity.err {
+        return Err(error::Error::Forbidden);
+    }
+    let email = identity.email.ok_or_else(|| error::Error::Forbidden)?;
+
+    if !admin_emails.contains(&email.as_str()) {
+        console_log!("{} tried to access admin panel but failed", email);
+        return Err(error::Error::Forbidden);
+    }
+
+    Ok(())
+}
+
+async fn handle_config(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    verify_identity(&req, &ctx.env).await?;
+
+    let config = read_config();
+    let mut resp = Response::from_json(&config)?;
+    attach_origin_to_header(&req, resp.headers_mut())?;
+    Ok(resp)
+}
+
 #[event(fetch)]
 pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> WorkerResult<Response> {
     log_request(&req);
@@ -317,6 +380,10 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> WorkerResult
         })
         .get_async("/api/salieri/hint", |req, ctx| async move {
             let result = handle_hint(req, ctx).await;
+            Ok(result_to_response(result))
+        })
+        .get_async("/api/salieri/config", |req, ctx| async move {
+            let result = handle_config(req, ctx).await;
             Ok(result_to_response(result))
         })
         .run(req, env)

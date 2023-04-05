@@ -47,7 +47,22 @@ async fn set_config(config: &Config, ctx: &RouteContext<()>) -> Result<()> {
     Ok(())
 }
 
-const ALLOWED_ORIGINS: [&str; 2] = ["https://tomshen.io", "http://localhost:3000"];
+async fn set_config_backup(config: &Config, ctx: &RouteContext<()>) -> Result<()> {
+    let time_string = Date::now().to_string();
+    let kv = ctx.kv(KV_BINDING)?;
+    kv.put(&format!("config_backup_{}", time_string), config)?
+        // expire in 1 year
+        .expiration_ttl(60 * 60 * 24 * 365)
+        .execute()
+        .await?;
+    Ok(())
+}
+
+const ALLOWED_ORIGINS: [&str; 3] = [
+    "https://tomshen.io",
+    "http://localhost:3000",
+    "https://salieri-admin.tomshen.io",
+];
 
 fn allowed_origin_header(origin: &str) -> Result<String> {
     if ALLOWED_ORIGINS.contains(&origin) {
@@ -378,6 +393,11 @@ async fn handle_config_get(req: Request, ctx: RouteContext<()>) -> Result<Respon
 async fn handle_config_post(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
     verify_identity(&req, &ctx.env).await?;
 
+    // get old config
+    let old_config = read_config(&ctx).await?;
+    // backup old config
+    set_config_backup(&old_config, &ctx).await?;
+
     let config: Config = req.json().await?;
     set_config(&config, &ctx).await?;
 
@@ -385,6 +405,7 @@ async fn handle_config_post(mut req: Request, ctx: RouteContext<()>) -> Result<R
         "success": true,
     }))?;
     attach_origin_to_header(&req, resp.headers_mut())?;
+    console_log!("config updated");
     Ok(resp)
 }
 

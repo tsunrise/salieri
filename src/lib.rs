@@ -313,6 +313,7 @@ pub async fn handle_hint(req: Request, ctx: RouteContext<()>) -> Result<Response
     let mut resp = Response::from_json(&json!({
         "welcome": config.welcome,
         "suggested_questions": sampled_questions,
+        "announcement": config.announcement,
     }))?;
     attach_origin_to_header(&req, resp.headers_mut())?;
     Ok(resp)

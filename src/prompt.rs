@@ -29,6 +29,7 @@ pub struct Config {
     pub prompt: Prompt,
     pub questions: Vec<String>,
     pub welcome: String,
+    pub announcement: Option<String>,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]

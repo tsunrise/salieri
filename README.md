@@ -10,26 +10,8 @@ The Salieri System is an API gateway that integrates OpenAI's Chat API into my p
 To build and deploy the Salieri System, you need to have Rust installed on your system. If you don't have Rust, you can install it by following the instructions at <https://rustup.rs/>.
 
 ## Configuration
-To successfully build this service, a `config.toml` file is required. This file specifies various configuration options, including the welcome message, hint questions, and the model used for the OpenAI Chat API. An example `config.toml` file is provided below:
 
-```toml
-welcome = "<Your welcome message>"
-questions = [
-    "Who are you?",
-    # insert your hint questions here
-]
-
-[prompt]
-messages = [
-    { role = "system", content = "You are a digital copy of Tom." },
-    { role = "user", content = "Act as Tom... <your instruction>" },
-    { role = "assistant", content = "Understood. I will act as Tom and answer very concisely." },
-]
-model = "gpt-3.5-turbo"
-max_tokens = 128
-```
-
-You will also need to setup the following environment variables: 
+You need to setup the following environment variables: 
 - `TURNSTILE_SECRET_KEY`: The secret key for Cloudflare Turnstile. 
 - `OPENAI_API_KEY`: The API key for OpenAI's Chat API.
 

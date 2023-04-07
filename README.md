@@ -21,9 +21,40 @@ You can use the following command to set the environment variables:
 wrangler secret put <variable_name>
 ```
 
+You will also need to set your `config` entry inside a Cloudflare Workers KV store. A template `config` entry is as follows
+```json
+{
+    "prompt": {
+        "model": "gpt-3.5-turbo",
+        "messages": [
+            {
+                "role": "system",
+                "content": "..."
+            },
+            {
+                "role": "user",
+                "content": "..."
+            },
+            {
+                "role": "assistant",
+                "content": "..."
+            }
+        ],
+        "max_tokens": 200
+    },
+    "questions": [
+        "...",
+        "...",
+        "..."
+    ],
+    "welcome": "...",
+    "announcement": null
+}
+```
+
 ## Build and Deployment
 
-After configuring the `config.toml` file, you can build and deploy the Salieri System using the following steps:
+You can build and deploy the Salieri System using the following steps:
 
 1. Open your terminal and navigate to the root directory of the Salieri System repository.
 

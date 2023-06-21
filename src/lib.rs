@@ -2,7 +2,6 @@ use crate::error::Result;
 use futures_util::StreamExt;
 use prompt::{Config, Prompt, UserRequest};
 use rand::{seq::SliceRandom, SeedableRng};
-use serde::Deserialize;
 use serde_json::json;
 use wasm_bindgen_futures::spawn_local;
 use worker::{
@@ -15,6 +14,11 @@ mod error;
 mod prompt;
 mod stream_parser;
 mod utils;
+mod admin;
+mod constants;
+mod id;
+
+use constants::*;
 
 use crate::{prompt::RequestToOpenAI, stream_parser::StreamItem};
 
@@ -28,7 +32,6 @@ fn log_request(req: &Request) {
     );
 }
 
-const KV_BINDING: &str = "salieri";
 
 async fn read_config(ctx: &RouteContext<()>) -> Result<Config> {
     // toml::from_str::<Config>(include_str!("../config.toml")).expect("invalid config.toml")
@@ -39,23 +42,6 @@ async fn read_config(ctx: &RouteContext<()>) -> Result<Config> {
         .await?
         .ok_or_else(|| error::Error::InternalError("config not found".into()))?;
     Ok(config)
-}
-
-async fn set_config(config: &Config, ctx: &RouteContext<()>) -> Result<()> {
-    let kv = ctx.kv(KV_BINDING)?;
-    kv.put("config", config)?.execute().await?;
-    Ok(())
-}
-
-async fn set_config_backup(config: &Config, ctx: &RouteContext<()>) -> Result<()> {
-    let time_string = Date::now().to_string();
-    let kv = ctx.kv(KV_BINDING)?;
-    kv.put(&format!("config_backup_{}", time_string), config)?
-        // expire in 1 year
-        .expiration_ttl(60 * 60 * 24 * 365)
-        .execute()
-        .await?;
-    Ok(())
 }
 
 const ALLOWED_ORIGINS: [&str; 3] = [
@@ -145,6 +131,11 @@ async fn verify_captcha(
         .await?)
 }
 
+#[derive(serde::Serialize)]
+pub struct EndMessage{
+    pub id: String
+}
+
 // TODO: enforce length limit, and cloudflare turnstile
 pub async fn serve_chat_in_ws(
     openai_key: &str,
@@ -154,6 +145,7 @@ pub async fn serve_chat_in_ws(
     timezone: impl chrono::TimeZone,
     server: WebSocket,
     prompt: Prompt,
+    log_kv: &worker::kv::KvStore,
 ) -> Result<()> {
     // wait for the first message from the client
     let first_msg = server.events()?.next().await.unwrap()?;
@@ -225,15 +217,22 @@ pub async fn serve_chat_in_ws(
         }
     }
 
-    console_log!(
-        "QA_LOG: {}",
-        json!({
-            "question": user_request.question,
-            "response": chatbot_answer,
-            "remote_ip": remote_ip,
-            "location": location,
-        })
-    );
+    // create an ID for this chat
+    let id = id::make_id();
+    let end_message = EndMessage{id: id.clone()};
+    let timestamp = id::get_utc_timestamp_sec();
+
+    // log the chat to KV
+    log_kv.put(&id, json!({
+        "question": user_request.question,
+        "response": chatbot_answer,
+        "remote_ip": remote_ip,
+        "location": location,
+        "timestamp": timestamp,
+    }))?.execute().await?;
+
+    // send the end message
+    server.send(&end_message)?;
 
     Ok(())
 }
@@ -271,6 +270,8 @@ pub async fn handle_chat(req: Request, ctx: RouteContext<()>) -> Result<Response
     let config = read_config(&ctx).await?;
     let prompt = config.prompt;
 
+    let log_kv = ctx.kv(KV_LOG_BINDING)?;
+
     spawn_local(async move {
         let server_clone = server.clone();
 
@@ -282,6 +283,7 @@ pub async fn handle_chat(req: Request, ctx: RouteContext<()>) -> Result<Response
             timezone,
             server,
             prompt,
+            &log_kv,
         )
         .await
         {
@@ -329,87 +331,6 @@ fn result_to_response(result: Result<Response>) -> Response {
     }
 }
 
-async fn verify_identity(req: &Request, env: &Env) -> Result<()> {
-    if env.var("DEV_MODE")?.to_string() == "1" {
-        console_log!("DEV_MODE is on, skipping identity verification");
-        return Ok(());
-    }
-    let admin_name = env
-        .var("ADMIN_NAME")
-        .expect("ADMIN_NAME not provided")
-        .to_string();
-    let admin_emails_concat = env
-        .var("ADMIN_EMAILS")
-        .expect("ADMIN_EMAILS not provided")
-        .to_string(); // comma separated
-    let admin_emails: Vec<&str> = admin_emails_concat.split(',').collect();
-
-    let api = format!(
-        "https://{}.cloudflareaccess.com/cdn-cgi/access/get-identity",
-        admin_name
-    );
-
-    // for now, we trust Cloudflare and send all cookies for simplicity
-    let cookie = req
-        .headers()
-        .get("Cookie")?
-        .ok_or_else(|| error::Error::InvalidRequest("Missing Cookies".to_string()))?;
-    let mut headers = Headers::new();
-    headers.set("Cookie", &cookie)?;
-    let req = Request::new_with_init(
-        &api,
-        RequestInit::new()
-            .with_method(Method::Get)
-            .with_headers(headers),
-    )?;
-    let mut resp = Fetch::Request(req).send().await?;
-    #[derive(Deserialize)]
-    struct Identity {
-        err: Option<String>,
-        email: Option<String>,
-    }
-    let identity: Identity = resp.json().await?;
-    if let Some(_) = identity.err {
-        return Err(error::Error::Forbidden);
-    }
-    let email = identity.email.ok_or_else(|| error::Error::Forbidden)?;
-
-    if !admin_emails.contains(&email.as_str()) {
-        console_log!("{} tried to access admin panel but failed", email);
-        return Err(error::Error::Forbidden);
-    }
-
-    Ok(())
-}
-
-async fn handle_config_get(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    verify_identity(&req, &ctx.env).await?;
-
-    let config = read_config(&ctx).await?;
-    let mut resp = Response::from_json(&config)?;
-    attach_origin_to_header(&req, resp.headers_mut())?;
-    Ok(resp)
-}
-
-async fn handle_config_post(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    verify_identity(&req, &ctx.env).await?;
-
-    // get old config
-    let old_config = read_config(&ctx).await?;
-    // backup old config
-    set_config_backup(&old_config, &ctx).await?;
-
-    let config: Config = req.json().await?;
-    set_config(&config, &ctx).await?;
-
-    let mut resp = Response::from_json(&json!({
-        "success": true,
-    }))?;
-    attach_origin_to_header(&req, resp.headers_mut())?;
-    console_log!("config updated");
-    Ok(resp)
-}
-
 fn handle_options(req: Request) -> Result<Response> {
     let mut resp = Response::empty()?;
     attach_origin_to_header(&req, resp.headers_mut())?;
@@ -435,11 +356,11 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> WorkerResult
             Ok(result_to_response(result))
         })
         .get_async("/api/salieri/config", |req, ctx| async move {
-            let result = handle_config_get(req, ctx).await;
+            let result = admin::handle_config_get(req, ctx).await;
             Ok(result_to_response(result))
         })
         .post_async("/api/salieri/config", |req, ctx| async move {
-            let result = handle_config_post(req, ctx).await;
+            let result: std::result::Result<Response, error::Error> = admin::handle_config_post(req, ctx).await;
             Ok(result_to_response(result))
         })
         .options_async("/api/salieri/:any", |req, _| async move {

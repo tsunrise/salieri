@@ -15,3 +15,6 @@ config.toml
 config.json
 upload_config.sh
 test.sh
+
+analytic.py
+response.txt

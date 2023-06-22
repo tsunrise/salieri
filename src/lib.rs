@@ -10,13 +10,13 @@ use worker::{
     Result as WorkerResult, RouteContext, Router, WebSocket, WebSocketPair, WebsocketEvent,
 };
 
+mod admin;
+mod constants;
 mod error;
+mod id;
 mod prompt;
 mod stream_parser;
 mod utils;
-mod admin;
-mod constants;
-mod id;
 
 use constants::*;
 
@@ -31,7 +31,6 @@ fn log_request(req: &Request) {
         req.cf().region().unwrap_or_else(|| "unknown region".into())
     );
 }
-
 
 async fn read_config(ctx: &RouteContext<()>) -> Result<Config> {
     // toml::from_str::<Config>(include_str!("../config.toml")).expect("invalid config.toml")
@@ -132,8 +131,35 @@ async fn verify_captcha(
 }
 
 #[derive(serde::Serialize)]
-pub struct EndMessage{
-    pub id: String
+pub struct EndMessage {
+    pub id: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct LogKvEntry {
+    pub question: String,
+    pub response: String,
+    pub remote_ip: String,
+    pub location: String,
+    pub timestamp: i64,
+}
+
+impl LogKvEntry {
+    pub fn new(
+        question: String,
+        response: String,
+        remote_ip: String,
+        location: String,
+        timestamp: i64,
+    ) -> Self {
+        Self {
+            question,
+            response,
+            remote_ip,
+            location,
+            timestamp,
+        }
+    }
 }
 
 // TODO: enforce length limit, and cloudflare turnstile
@@ -219,17 +245,23 @@ pub async fn serve_chat_in_ws(
 
     // create an ID for this chat
     let id = id::make_id();
-    let end_message = EndMessage{id: id.clone()};
+    let end_message = EndMessage { id: id.clone() };
     let timestamp = id::get_utc_timestamp_sec();
 
     // log the chat to KV
-    log_kv.put(&id, json!({
-        "question": user_request.question,
-        "response": chatbot_answer,
-        "remote_ip": remote_ip,
-        "location": location,
-        "timestamp": timestamp,
-    }))?.execute().await?;
+    log_kv
+        .put(
+            &id,
+            &LogKvEntry::new(
+                user_request.question,
+                chatbot_answer,
+                remote_ip.to_string(),
+                location.to_string(),
+                timestamp,
+            ),
+        )?
+        .execute()
+        .await?;
 
     // send the end message
     server.send(&end_message)?;
@@ -331,6 +363,33 @@ fn result_to_response(result: Result<Response>) -> Response {
     }
 }
 
+pub async fn handle_lookup(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let id = req
+        .url()?
+        .query_pairs()
+        .find(|(k, _)| k == "id")
+        .ok_or_else(|| error::Error::InvalidRequest("Expected query parameter `id`".to_string()))?
+        .1
+        .to_string();
+
+    let log_kv = ctx.kv(KV_LOG_BINDING)?;
+    let entry = log_kv
+        .get(&id)
+        .json::<LogKvEntry>()
+        .await?
+        .ok_or_else(|| error::Error::NotFound(format!("No chat found with id {}", id)))?;
+
+    let mut resp = Response::from_json(&json!({
+        "question": entry.question,
+        "response": entry.response,
+        "timestamp": entry.timestamp,
+    }))?;
+
+    attach_origin_to_header(&req, resp.headers_mut())?;
+
+    Ok(resp)
+}
+
 fn handle_options(req: Request) -> Result<Response> {
     let mut resp = Response::empty()?;
     attach_origin_to_header(&req, resp.headers_mut())?;
@@ -360,7 +419,12 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> WorkerResult
             Ok(result_to_response(result))
         })
         .post_async("/api/salieri/config", |req, ctx| async move {
-            let result: std::result::Result<Response, error::Error> = admin::handle_config_post(req, ctx).await;
+            let result: std::result::Result<Response, error::Error> =
+                admin::handle_config_post(req, ctx).await;
+            Ok(result_to_response(result))
+        })
+        .get_async("/api/salieri/lookup", |req, ctx| async move {
+            let result = handle_lookup(req, ctx).await;
             Ok(result_to_response(result))
         })
         .options_async("/api/salieri/:any", |req, _| async move {

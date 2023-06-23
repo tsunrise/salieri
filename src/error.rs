@@ -8,6 +8,8 @@ pub enum Error {
     InvalidRequest(String),
     #[error("forbidden")]
     Forbidden,
+    #[error("not found: {0}")]
+    NotFound(String),
     #[error("internal error: worker")]
     WorkerError(#[from] worker::Error),
     #[error("internal error: kv")]
@@ -25,6 +27,7 @@ impl Error {
         match self {
             Error::InvalidRequest(_) => 400,
             Error::Forbidden => 403,
+            Error::NotFound(_) => 404,
             Error::WorkerError(_) => 500,
             Error::KvError(_) => 500,
             Error::SerdeJsonError(_) => 500,

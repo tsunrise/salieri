@@ -5,7 +5,7 @@ logpush = true
 
 kv_namespaces = [
     { binding = "salieri", id = "ab0317c9789c49bbb08b7a7a49c56504", preview_id = "85b6e46c431a400e9c35da2246cb06aa" },
-    { binding = "log", id = "24216ab84bb64d2cb3628ee8c6ff0ebc", preview_id = "9617196f87044c2291470899da8bdb09"}
+    { binding = "log", id = "24216ab84bb64d2cb3628ee8c6ff0ebc", preview_id = "9617196f87044c2291470899da8bdb09" },
 ]
 
 routes = [

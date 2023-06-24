@@ -130,18 +130,17 @@ async fn verify_captcha(
         .await?)
 }
 
-#[derive(serde::Serialize)]
-pub struct EndMessage {
-    pub id: String,
-}
-
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct LogKvEntry {
     pub question: String,
     pub response: String,
     pub remote_ip: String,
     pub location: String,
+    pub secret: String,
     pub timestamp: i64,
+    /// true if the feedback is positive, false if negative, None if not given
+    pub feedback: Option<bool>,
+    pub comment: Option<String>,
 }
 
 impl LogKvEntry {
@@ -151,6 +150,7 @@ impl LogKvEntry {
         remote_ip: String,
         location: String,
         timestamp: i64,
+        secret: String,
     ) -> Self {
         Self {
             question,
@@ -158,6 +158,9 @@ impl LogKvEntry {
             remote_ip,
             location,
             timestamp,
+            secret,
+            feedback: None,
+            comment: None,
         }
     }
 }
@@ -243,9 +246,10 @@ pub async fn serve_chat_in_ws(
         }
     }
 
-    // create an ID for this chat
     let id = id::make_id();
-    let end_message = EndMessage { id: id.clone() };
+    let secret = id::make_secret();
+
+    let end_message = json!({ "id": id.clone() , "secret": secret.clone()});
     let timestamp = id::get_utc_timestamp_sec();
 
     // log the chat to KV
@@ -258,6 +262,7 @@ pub async fn serve_chat_in_ws(
                 remote_ip.to_string(),
                 location.to_string(),
                 timestamp,
+                secret,
             ),
         )?
         .execute()
@@ -353,6 +358,109 @@ pub async fn handle_hint(req: Request, ctx: RouteContext<()>) -> Result<Response
     Ok(resp)
 }
 
+trait UrlExt {
+    fn get_query_param(&self, key: &str) -> Result<String>;
+}
+
+impl UrlExt for worker::Url {
+    fn get_query_param(&self, key: &str) -> Result<String> {
+        Ok(self
+            .query_pairs()
+            .find(|(k, _)| k == key)
+            .ok_or_else(|| {
+                error::Error::InvalidRequest(format!("Expected query parameter `{}`", key))
+            })?
+            .1
+            .to_string())
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct FeedbackEntry {
+    pub feedback: Option<bool>,
+    pub comment: Option<String>,
+}
+
+impl FeedbackEntry {
+    fn new(feedback: Option<bool>, comment: Option<String>) -> Self {
+        Self { feedback, comment }
+    }
+}
+
+pub async fn handle_feedback_get(req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let id = req.url()?.get_query_param("id")?;
+    let secret = req.url()?.get_query_param("secret")?;
+
+    let log_kv = ctx.kv(KV_LOG_BINDING)?;
+    let entry = log_kv
+        .get(&id)
+        .json::<LogKvEntry>()
+        .await
+        .map_err(|e| error::Error::KvError(e))?
+        .ok_or_else(|| error::Error::NotFound(format!("No entry found for id {}", id)))?;
+
+    // check secret
+    let expected_secret = entry.secret;
+    if secret != expected_secret {
+        return Err(error::Error::InvalidRequest("Invalid secret".to_string()));
+    };
+
+    let mut resp = Response::from_json(&FeedbackEntry::new(entry.feedback, entry.comment))?;
+    attach_origin_to_header(&req, resp.headers_mut())?;
+    Ok(resp)
+}
+
+pub async fn handle_feedback_post(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct Body {
+        id: String,
+        secret: String,
+        feedback: Option<bool>,
+        comment: Option<String>,
+    }
+
+    let body = req.json::<Body>().await?;
+    let id = body.id;
+    let secret = body.secret;
+
+    let log_kv = ctx.kv(KV_LOG_BINDING)?;
+    let mut entry = log_kv
+        .get(&id)
+        .json::<LogKvEntry>()
+        .await
+        .map_err(|e| error::Error::KvError(e))?
+        .ok_or_else(|| error::Error::NotFound(format!("No entry found for id {}", id)))?;
+
+    // check secret
+    let expected_secret = &entry.secret;
+    if &secret != expected_secret {
+        return Err(error::Error::InvalidRequest("Invalid secret".to_string()));
+    };
+
+    // update entry if entry is not already submitted
+    let mut updated = false;
+    if entry.feedback.is_none() && body.feedback.is_some() {
+        entry.feedback = body.feedback;
+        updated = true;
+    }
+    if entry.comment.is_none() && body.comment.is_some() {
+        entry.comment = body.comment;
+        updated = true;
+    }
+
+    if updated {
+        log_kv
+            .put(&id, &entry)?
+            .execute()
+            .await
+            .map_err(|e| error::Error::KvError(e))?;
+    };
+
+    let mut resp = Response::from_json(&FeedbackEntry::new(entry.feedback, entry.comment))?;
+    attach_origin_to_header(&req, resp.headers_mut())?;
+    Ok(resp)
+}
+
 fn result_to_response(result: Result<Response>) -> Response {
     match result {
         Ok(response) => response,
@@ -425,6 +533,14 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> WorkerResult
         })
         .get_async("/api/salieri/lookup", |req, ctx| async move {
             let result = handle_lookup(req, ctx).await;
+            Ok(result_to_response(result))
+        })
+        .get_async("/api/salieri/feedback", |req, ctx| async move {
+            let result = handle_feedback_get(req, ctx).await;
+            Ok(result_to_response(result))
+        })
+        .post_async("/api/salieri/feedback", |req, ctx| async move {
+            let result = handle_feedback_post(req, ctx).await;
             Ok(result_to_response(result))
         })
         .options_async("/api/salieri/:any", |req, _| async move {

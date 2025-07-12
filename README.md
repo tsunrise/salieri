@@ -58,13 +58,17 @@ You can build and deploy the Salieri System using the following steps:
 
 1. Open your terminal and navigate to the root directory of the Salieri System repository.
 
-2. Use Wrangler CLI to publish the service to Cloudflare Workers. If you haven't installed Wrangler, you can do so using npm. Run the following command to publish the service:
+2. Use Wrangler CLI to publish the service to Cloudflare Workers. If you haven't installed Wrangler, you can do so using npm. You can use the npm script or run wrangler directly:
 
 ```bash
-npx wrangler publish
+npm run deploy
+# or
+npx wrangler deploy
 ```
 
-The `wrangler publish` command will build the Rust code, package it as a Cloudflare Worker, and deploy it to your Cloudflare account. Once the deployment is successful, you'll receive a confirmation message with the URL of your deployed service.
+The `wrangler deploy` command will build the Rust code, package it as a Cloudflare Worker, and deploy it to your Cloudflare account. Once the deployment is successful, you'll receive a confirmation message with the URL of your deployed service.
+
+**Note:** This project uses Wrangler v4 and requires Rust with the latest worker-rs crate (v0.6.0).
 
 ## License
 This project is licensed under the [MIT License](LICENSE).

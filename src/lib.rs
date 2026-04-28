@@ -43,10 +43,11 @@ async fn read_config(ctx: &RouteContext<()>) -> Result<Config> {
     Ok(config)
 }
 
-const ALLOWED_ORIGINS: [&str; 3] = [
+const ALLOWED_ORIGINS: [&str; 4] = [
     "https://tomshen.io",
     "http://localhost:3000",
     "https://salieri-admin.tomshen.io",
+    "https://local.tomshen.dev",
 ];
 
 fn allowed_origin_header(origin: &str) -> Result<String> {

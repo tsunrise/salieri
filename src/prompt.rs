@@ -44,9 +44,8 @@ pub fn get_local_datetime(timezone: impl chrono::TimeZone) -> String {
     use chrono::prelude::*;
     let js_date = js_sys::Date::new_0();
     let now_timestamp = js_date.get_time() / 1000.; // convert milliseconds to seconds
-    let naive_datetime =
-        chrono::NaiveDateTime::from_timestamp_opt(now_timestamp as i64, 0).unwrap();
-    let local_datetime = timezone.from_utc_datetime(&naive_datetime);
+    let utc_datetime = chrono::DateTime::from_timestamp(now_timestamp as i64, 0).unwrap();
+    let local_datetime = utc_datetime.with_timezone(&timezone);
     format!(
         "{}-{:02}-{:02} {}:{}:{}",
         local_datetime.year(),

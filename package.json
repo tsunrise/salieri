@@ -2,10 +2,10 @@
 	"private": true,
 	"version": "0.0.0",
 	"scripts": {
-		"deploy": "wrangler publish",
+		"deploy": "wrangler deploy",
 		"dev": "wrangler dev --local"
 	},
 	"devDependencies": {
-		"wrangler": "^2.0.0"
+		"wrangler": "^4.24.3"
 	}
 }

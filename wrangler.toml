@@ -1,6 +1,6 @@
 name = "salieri"                  # todo
 main = "build/worker/shim.mjs"
-compatibility_date = "2022-01-20"
+compatibility_date = "2024-11-01"
 logpush = true
 
 kv_namespaces = [
@@ -14,7 +14,7 @@ routes = [
 ]
 
 [vars]
-WORKERS_RS_VERSION = "0.0.11"
+WORKERS_RS_VERSION = "0.6.0"
 TURNSTILE_SITEKEY = "0x4AAAAAAADKETLTiaTObZqk"
 ADMIN_NAME = "tomshen"
 ADMIN_EMAILS = "tom.shen.cn@gmail.com,me@tomshen.io,tomshen@stanford.edu"

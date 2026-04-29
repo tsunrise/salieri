@@ -27,8 +27,8 @@ fn log_request(req: &Request) {
         "{} - [{}], located at: {:?}, within: {}",
         Date::now().to_string(),
         req.path(),
-        req.cf().coordinates().unwrap_or_default(),
-        req.cf().region().unwrap_or_else(|| "unknown region".into())
+        req.cf().and_then(|cf| cf.coordinates()).unwrap_or_default(),
+        req.cf().and_then(|cf| cf.region()).unwrap_or_else(|| "unknown region".into())
     );
 }
 
@@ -271,7 +271,7 @@ pub async fn serve_chat_in_ws(
 }
 
 pub async fn handle_chat(req: Request, ctx: RouteContext<()>) -> Result<Response> {
-    req.cf().timezone();
+    let _timezone = req.cf().map(|cf| cf.timezone_name());
     let upgrade_header = req.headers().get("Upgrade")?;
     match upgrade_header {
         Some(x) if x == "websocket" => {
@@ -290,15 +290,18 @@ pub async fn handle_chat(req: Request, ctx: RouteContext<()>) -> Result<Response
     let openai_key = ctx.var("OPENAI_API_KEY")?.to_string();
     let turnstile_secret_key = ctx.var("TURNSTILE_SECRET_KEY")?.to_string();
     let remote_ip = req.headers().get("CF-Connecting-IP")?.unwrap();
-    let cf = req.cf();
-    let location = format!(
-        "{} - {} - {} - {:?}",
-        cf.colo(),
-        cf.country().unwrap_or_else(|| "unknown".to_string()),
-        cf.city().unwrap_or_else(|| "unknown".to_string()),
-        cf.coordinates().unwrap_or_else(|| (0., 0.)),
-    );
-    let timezone = cf.timezone();
+    let location = if let Some(cf) = req.cf() {
+        format!(
+            "{} - {} - {} - {:?}",
+            cf.colo(),
+            cf.country().unwrap_or_else(|| "unknown".to_string()),
+            cf.city().unwrap_or_else(|| "unknown".to_string()),
+            cf.coordinates().unwrap_or_else(|| (0., 0.)),
+        )
+    } else {
+        "unknown - unknown - unknown - (0.0, 0.0)".to_string()
+    };
+    let timezone = chrono::Utc; // For now, use UTC. TODO: parse timezone from CF headers
 
     let config = read_config(&ctx).await?;
     let prompt = config.prompt;
